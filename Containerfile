@@ -22,7 +22,7 @@ COPY --from=akmods /rpms/kmods /tmp/akmods/rpms/kmods
 COPY --from=akmods-extra /rpms/extra /tmp/akmods-extra/rpms/extra
 COPY --from=akmods-extra /rpms/kmods /tmp/akmods-extra/rpms/kmods
 
-RUN dnf5 -y install \
+RUN dnf5 -y install --allowerasing \
     /tmp/akmods/kernel-rpms/*.rpm \
     /tmp/akmods/rpms/common/*.rpm \
     /tmp/akmods/rpms/kmods/*.rpm \
