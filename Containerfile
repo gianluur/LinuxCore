@@ -1,41 +1,74 @@
-# Allow build scripts to be referenced without being copied into the final image
-FROM scratch AS ctx
-COPY build_files /
-COPY system_files /system_files
+ARG FEDORA_VERSION=44
+ARG KERNEL_FLAVOR=ogc
+ARG KERNEL_VERSION=7.0.9-ogc3.2.fc${FEDORA_VERSION}.x86_64
+ARG NVIDIA_FLAVOR=nvidia-open
 
-# Base Image
-FROM ghcr.io/ublue-os/bazzite:stable@sha256:9556db65991d57a03a7dc18e4ba28a686d8bcdcd6b61235aa69c8267bb22ff76
-## Other possible base images include:
-# FROM ghcr.io/ublue-os/bazzite:testing
-# FROM ghcr.io/ublue-os/aurora:stable
-# FROM ghcr.io/ublue-os/bluefin-nvidia-open:stable
-# 
-# ... and so on, here are more base images
-# Universal Blue Images: https://github.com/orgs/ublue-os/packages
-# Fedora base image: quay.io/fedora/fedora-bootc:44
-# CentOS base images: quay.io/centos-bootc/centos-bootc:stream10
+# ─── STAGES: uBlue's pre-built kernel + drivers ───
+FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods
+FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra
+FROM ghcr.io/ublue-os/akmods-${NVIDIA_FLAVOR}:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-nvidia
+FROM ghcr.io/ublue-os/brew:latest AS brew
 
-### [IM]MUTABLE /opt
-## Some bootable images, like Fedora, have /opt symlinked to /var/opt, in order to
-## make it mutable/writable for users. However, some packages write files to this directory,
-## thus its contents might be wiped out when bootc deploys an image, making it troublesome for
-## some packages. Eg, google-chrome, docker-desktop.
-##
-## Uncomment the following line if one desires to make /opt immutable and be able to be used
-## by the package manager.
+# ─── FINAL BASE ───
+FROM ghcr.io/ublue-os/kinoite-main:${FEDORA_VERSION}
 
-# RUN rm /opt && mkdir /opt
+ARG FEDORA_VERSION=44
+ARG NVIDIA_FLAVOR=nvidia-open
 
-### MODIFICATIONS
-## make modifications desired in your image and install packages by modifying the build.sh script
-## the following RUN directive does all the things required to run "build.sh" as recommended.
+# ─── 1. OGC KERNEL ───
+COPY --from=akmods /kernel-rpms /tmp/akmods/kernel-rpms
+COPY --from=akmods /rpms/common /tmp/akmods/rpms/common
+COPY --from=akmods /rpms/kmods /tmp/akmods/rpms/kmods
+COPY --from=akmods-extra /rpms/extra /tmp/akmods-extra/rpms/extra
+COPY --from=akmods-extra /rpms/kmods /tmp/akmods-extra/rpms/kmods
 
-RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
-    --mount=type=cache,dst=/var/cache \
-    --mount=type=cache,dst=/var/log \
-    --mount=type=tmpfs,dst=/tmp \
-    /ctx/build.sh
+RUN dnf5 -y install \
+    /tmp/akmods/kernel-rpms/*.rpm \
+    /tmp/akmods/rpms/common/*.rpm \
+    /tmp/akmods/rpms/kmods/*.rpm \
+    /tmp/akmods-extra/rpms/extra/*.rpm \
+    /tmp/akmods-extra/rpms/kmods/*.rpm \
+    && dnf5 clean all
 
-### LINTING
-## Verify final image and contents are correct.
+# ─── 2. NVIDIA DRIVERS ───
+COPY --from=akmods-nvidia /rpms /tmp/rpms/nvidia
+
+RUN dnf5 -y install \
+    egl-wayland.x86_64 egl-wayland.i686 \
+    egl-wayland2.x86_64 egl-wayland2.i686 \
+    && dnf5 clean all
+
+RUN IMAGE_NAME="SKIP_PACKAGE_INSTALL" \
+    AKMODNV_PATH="/tmp/rpms/nvidia" \
+    MULTILIB=1 \
+    /tmp/rpms/nvidia/ublue-os/nvidia-install.sh \
+    && dnf5 clean all
+
+
+# ─── 4. SCX SCHEDULERS (CachyOS COPR) ───
+RUN dnf5 -y copr enable bieszczaders/kernel-cachyos-addons && \
+    dnf5 -y install scx-scheds scx-tools && \
+    dnf5 -y copr disable bieszczaders/kernel-cachyos-addons && \
+    dnf5 clean all
+
+# ─── 5. PERFORMANCE PACKAGES ───
+RUN dnf5 -y install \
+    cachyos-settings \
+    gamemode \
+    mangohud \
+    vkBasalt \
+    btop \
+    bees \
+    input-remapper \
+    distrobox \
+    && dnf5 clean all
+
+# ─── 6. SYSTEM TWEAKS ───
+COPY system_files/ /
+
+# Disable irqbalance (conflicts with scx_lavd per winterofhell guide)
+RUN systemctl disable irqbalance.service && \
+    systemctl enable scx_loader.service
+
+# ─── 7. BOOTC LINT ───
 RUN bootc container lint
