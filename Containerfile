@@ -60,7 +60,7 @@ RUN dnf5 -y install \
 COPY system_files/ /
 
 # Disable irqbalance (conflicts with scx_lavd per winterofhell guide)
-RUN systemctl disable irqbalance.service && \
+RUN (systemctl disable irqbalance.service 2>/dev/null || true) && \
     systemctl enable scx_loader.service
 
 # ─── 7. BOOTC LINT ───
