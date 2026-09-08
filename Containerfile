@@ -51,16 +51,9 @@ RUN dnf5 -y copr enable bieszczaders/kernel-cachyos-addons && \
     dnf5 -y copr disable bieszczaders/kernel-cachyos-addons && \
     dnf5 clean all
 
-# ─── 5. PERFORMANCE PACKAGES ───
+# ─── 5. BETTER STEAM GAMING PERFORMANCES ───
 RUN dnf5 -y install \
-    cachyos-settings \
     gamemode \
-    mangohud \
-    vkBasalt \
-    btop \
-    bees \
-    input-remapper \
-    distrobox \
     && dnf5 clean all
 
 # ─── 6. SYSTEM TWEAKS ───
