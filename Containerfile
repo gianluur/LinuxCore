@@ -44,6 +44,35 @@ RUN IMAGE_NAME="SKIP_PACKAGE_INSTALL" \
     /tmp/rpms/nvidia/ublue-os/nvidia-install.sh \
     && dnf5 clean all
 
+RUN dnf5 -y copr enable ublue-os/bazzite && \
+    dnf5 -y copr enable ublue-os/bazzite-multilib && \
+    dnf5 -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release && \
+    dnf5 -y config-manager setopt "terra-mesa".enabled=false && \
+    # Swap to Valve's patched versions
+    dnf5 -y swap --from-repo=copr:copr.fedorainfracloud.org:ublue-os:bazzite \
+    wireplumber wireplumber && \
+    dnf5 -y swap --from-repo=copr:copr.fedorainfracloud.org:ublue-os:bazzite-multilib \
+    bluez bluez && \
+    dnf5 -y swap --from-repo=copr:copr.fedorainfracloud.org:ublue-os:bazzite-multilib \
+    xorg-x11-server-Xwayland xorg-x11-server-Xwayland && \
+    dnf5 -y swap --from-repo=terra-mesa \
+    mesa-filesystem mesa-filesystem && \
+    # Lock them so Fedora updates don't overwrite Valve's patches
+    dnf5 versionlock add \
+    wireplumber wireplumber-libs \
+    bluez bluez-cups bluez-libs bluez-obexd \
+    xorg-x11-server-Xwayland \
+    mesa-dri-drivers mesa-filesystem mesa-libEGL mesa-libGL mesa-libgbm mesa-vulkan-drivers && \
+    # Better Bluetooth audio codec (free aptX implementation)
+    dnf5 -y install libfreeaptx && \
+    # H.264 codec for browsers/video calls (Fedora can't ship it directly)
+    dnf5 -y install --enable-repo="*fedora-multimedia*" --allowerasing \
+    openh264.x86_64 openh264.i686 && \
+    # Clean up: disable repos so they don't pollute the final image
+    dnf5 -y copr disable ublue-os/bazzite && \
+    dnf5 -y copr disable ublue-os/bazzite-multilib && \
+    dnf5 -y config-manager setopt terra.enabled=0 && \
+    dnf5 clean all
 
 # ─── 4. SCX SCHEDULERS (CachyOS COPR) ───
 RUN dnf5 -y copr enable bieszczaders/kernel-cachyos-addons && \

@@ -46,7 +46,7 @@ jobs:
         run: |
           just check
 
-      - name: Image Name
+      - name: LinuxCore
         id: image-name
         run: |
           IMAGE_NAME=$(just image_name)
