@@ -7,13 +7,11 @@ ARG NVIDIA_FLAVOR=nvidia-open
 FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods
 FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra
 FROM ghcr.io/ublue-os/akmods-${NVIDIA_FLAVOR}:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-nvidia
-FROM ghcr.io/ublue-os/brew:latest AS brew
 
 # ─── FINAL BASE ───
 FROM ghcr.io/ublue-os/kinoite-main:${FEDORA_VERSION}
 
 ARG FEDORA_VERSION=44
-ARG NVIDIA_FLAVOR=nvidia-open
 
 # ─── 1. OGC KERNEL ───
 COPY --from=akmods /kernel-rpms /tmp/akmods/kernel-rpms
@@ -44,34 +42,34 @@ RUN IMAGE_NAME="SKIP_PACKAGE_INSTALL" \
     /tmp/rpms/nvidia/ublue-os/nvidia-install.sh \
     && dnf5 clean all
 
+# ─── 3. VALVE-PATCHED PACKAGES + CODECS ───
+# Swap wireplumber/bluez/Xwayland/Mesa to uBlue/Valve patched builds,
+# lock them, install better Bluetooth codec + H.264, then disable repos.
 RUN dnf5 -y copr enable ublue-os/bazzite && \
     dnf5 -y copr enable ublue-os/bazzite-multilib && \
-    dnf5 -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release && \
-    dnf5 -y config-manager setopt "terra-mesa".enabled=false && \
-    # Swap to Valve's patched versions
+    dnf5 -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' \
+    terra-release terra-release-extras terra-release-mesa && \
+    dnf5 -y remove mesa-va-drivers && \
     dnf5 -y swap --from-repo=copr:copr.fedorainfracloud.org:ublue-os:bazzite \
     wireplumber wireplumber && \
     dnf5 -y swap --from-repo=copr:copr.fedorainfracloud.org:ublue-os:bazzite-multilib \
     bluez bluez && \
     dnf5 -y swap --from-repo=copr:copr.fedorainfracloud.org:ublue-os:bazzite-multilib \
     xorg-x11-server-Xwayland xorg-x11-server-Xwayland && \
-    dnf5 -y swap --from-repo=terra-mesa \
-    mesa-filesystem mesa-filesystem && \
-    # Lock them so Fedora updates don't overwrite Valve's patches
+    for pkg in mesa-filesystem mesa-dri-drivers mesa-libEGL mesa-libGL mesa-libgbm mesa-vulkan-drivers; do \
+    dnf5 -y swap --from-repo=terra-mesa $pkg $pkg; \
+    done && \
     dnf5 versionlock add \
     wireplumber wireplumber-libs \
     bluez bluez-cups bluez-libs bluez-obexd \
     xorg-x11-server-Xwayland \
     mesa-dri-drivers mesa-filesystem mesa-libEGL mesa-libGL mesa-libgbm mesa-vulkan-drivers && \
-    # Better Bluetooth audio codec (free aptX implementation)
     dnf5 -y install libfreeaptx && \
-    # H.264 codec for browsers/video calls (Fedora can't ship it directly)
     dnf5 -y install --enable-repo="*fedora-multimedia*" --allowerasing \
     openh264.x86_64 openh264.i686 && \
-    # Clean up: disable repos so they don't pollute the final image
     dnf5 -y copr disable ublue-os/bazzite && \
     dnf5 -y copr disable ublue-os/bazzite-multilib && \
-    dnf5 -y config-manager setopt terra.enabled=0 && \
+    dnf5 -y config-manager setopt terra.enabled=0 terra-mesa.enabled=0 && \
     dnf5 clean all
 
 # ─── 4. SCX SCHEDULERS (CachyOS COPR) ───
@@ -80,17 +78,11 @@ RUN dnf5 -y copr enable bieszczaders/kernel-cachyos-addons && \
     dnf5 -y copr disable bieszczaders/kernel-cachyos-addons && \
     dnf5 clean all
 
-# ─── 5. BETTER STEAM GAMING PERFORMANCES ───
-RUN dnf5 -y install \
-    gamemode \
-    && dnf5 clean all
-
-# ─── 6. SYSTEM TWEAKS ───
+# ─── 5. SYSTEM TWEAKS ───
 COPY system_files/ /
 
-# Disable irqbalance (conflicts with scx_lavd per winterofhell guide)
 RUN (systemctl disable irqbalance.service 2>/dev/null || true) && \
     systemctl enable scx_loader.service
 
-# ─── 7. BOOTC LINT ───
-RUN bootc container lint
+# ─── 6. BOOTC LINT ───
+RUN --mount=type=tmpfs,target=/run bootc container lint
