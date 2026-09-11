@@ -86,3 +86,11 @@ RUN (systemctl disable irqbalance.service 2>/dev/null || true) && \
 
 # ─── 6. BOOTC LINT ───
 RUN --mount=type=tmpfs,target=/run bootc container lint
+
+# ─── 7. OCI METADATA (required for BlueBuild and other consumers) ───
+LABEL org.opencontainers.image.version="${FEDORA_VERSION}" \
+    org.opencontainers.image.title="linux-core" \
+    org.opencontainers.image.description="Stripped-down Bazzite/kinoite base for BlueBuild" \
+    org.opencontainers.image.source="https://github.com/gianluur/linux-core" \
+    org.opencontainers.image.vendor="gianluur" \
+    org.opencontainers.image.licenses="Apache-2.0"
